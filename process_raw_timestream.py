@@ -104,7 +104,7 @@ class Frame(object):
 
 def write_frame(dataset_handler, datum, write_index):
     '''
-    Function used to look at multiprocessing queue.
+    Write a completed frame to disk and update the file handler size if needed.
     '''
     
     current_length = (dataset_handler.shape)[0]
@@ -120,8 +120,7 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
     '''
     Parse hdf5 file from packets into frames.
     '''
-
-    total_packets = data_in_handle.shape[0]
+    total_packets = data_in_handle.attrs['Number_packets']
     
     mailbox = []
     frame_index = 0
@@ -138,10 +137,15 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
     current_time = time.time()
     start_time = current_time
     last_time = current_time
-    for packet_index, packet in enumerate(data_in_handle):
+    #data = data_in_handle['ADC_Timestream_Data']
+
+    #for packet_index, packet in enumerate(data_in_handle):
+    for packet_index in xrange(total_packets):
+
         if to_parse is not None and packet_index >= to_parse:
             break
 
+        packet = data_in_handle['ADC_Timestream_Data'][packet_index]
 
         current_time = time.time()
         #if (packet_index > 0) and (packet_index % 5000 == 0):
@@ -184,9 +188,7 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
                 #    packet['timestamp'], packet['antenna'], mailbox_number)
                 
                 if frame.add_packet(packet): #Returns true if the packet is full, false otherwise.
-                    write_frames += [mailbox_number]
-                    #if queue is not None:
-                        #queue.put(frame.return_structure())                   
+                    write_frames += [mailbox_number]     
                     write_frame(data_out_handle, frame.array(), completed_frame_total)
                     #completed_frames[completed_frame_total] = frame.frame_number
                     completed_frame_total += 1 
@@ -207,14 +209,7 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
         elif len(mailbox) == 0:
             need_new = True
 
-         
-#        if len(write_frames) > 0:
-#            mailbox = [i for j, i in enumerate(mailbox) if j not in write_frames]
-#            write_frames = []
-
-#        if len(mailbox) == 0:
-#            need_new = True
-        
+                
     print "++++++++++++++++++++++++++++++++++++++++"        
     print "At end of datafile; writing remaining frames:\n"
     print "Mailbox size: {0:d}\n".format(len(mailbox))
@@ -290,8 +285,8 @@ def main():
     print "\n"
 
 
-    data = in_data['ADC_Timestream_Data']
-    total_packets = data.shape[0]
+    
+    total_packets = in_data.attrs['Number_packets']
     print "Total packets in file: {0:d}".format(total_packets)
 
     max_num_frames = int(total_packets / 4) + 10 if int(total_packets / 4) > 1000 else 1010
@@ -329,7 +324,7 @@ def main():
                                               compression="gzip", compression_opts=9)
 
 
-    final_entries = parse_and_write_data(data, dataset_handler, number_channels, None)
+    final_entries = parse_and_write_data(in_data, dataset_handler, number_channels, None)
 
 
     out_data.attrs['true_number_entries'] = final_entries

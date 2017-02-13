@@ -1,10 +1,7 @@
 /*
- * chime_receiver.c - A simple UDP chime receiver
- * Sorts the arriving packets and writes to disk
- *  -- need to upgrade to use structs
- *  -- need to upgrade to read in configuration file for nchannels etc...
- * usage: chime_receiver <port>
- * started from http://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/udpserver.c
+ * suitcase interferometer UDP packet receiver
+ * based on chime_receiver.c - A simple UDP chime receiver
+ * originally started from http://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/udpserver.c
  */
 
 #include <stdio.h>
@@ -41,36 +38,8 @@ void sig_handler(int sigNumber) {
     }
 }
 
-/*void get_current_time(char* now){
-
-
-
-}*/
-/*
-int get_current_time(){
-    struct timeval curTime;
-    char buffer[80];
-    char comp_time[80];
-    gettimeofday(&curTime, NULL);
-    int milli = curTime.tv_usec / 1000;
-
-    strftime(buffer, 80, "%H%M%S", localtime(&curTime.tv_sec));
-    sprintf(comp_time, "%s%03d", buffer, milli);
-    printf("%s\n", comp_time);
-
-    int comp_time_num = 0;
-    sscanf(comp_time, "%d", &comp_time_num);
-
-    printf("d: %d\n", comp_time_num);
-
-    return comp_time_num;
-}*/
-
-
 int main(int argc, char **argv) {
 
-//  int nfreq = 1024
-//  ncorr = 8*(8+1)/2;
     int ntimes = 3600;
 
     typedef struct visibility
@@ -217,7 +186,7 @@ int main(int argc, char **argv) {
     
 
     hsize_t d = 1;
-    hid_t attr_id, date_attr_id; //attribute identifier
+    hid_t attr_id, tot_packets_attr_id, date_attr_id; //attribute identifier
               
     //dataspace_id for attributes
     hid_t dataspace_id = H5Screate(H5S_SCALAR);
@@ -254,16 +223,21 @@ int main(int argc, char **argv) {
         sprintf(outfname, "dataOut/d%s/%s.%04d", dateBuffer, argv[2], loop_number);
         printf("%s\n", outfname);
         fid=H5Fcreate(outfname,H5F_ACC_TRUNC,H5P_DEFAULT,H5P_DEFAULT);
-        //hid_t H5PTcreate_fl( hid_t loc_id, const char * dset_name, hid_t dtype_id, hsize_t chunk_size, int compression )
+
         ptable  = H5PTcreate_fl(fid, "ADC_Timestream_Data", my_dt, (hsize_t)1, -1);
-        //attr_id = H5Acreate (fid, "Number_channels", H5T_NATIVE_INT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT);
+
         attr_id = H5Acreate(fid, "Number_channels", H5T_NATIVE_INT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT);
+        tot_packets_attr_id = H5Acreate(fid, "Number_packets", H5T_NATIVE_INT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT);
         date_attr_id = H5Acreate2(fid, "Date", atype, dataspace_id, H5P_DEFAULT, H5P_DEFAULT);
 
         status = H5Awrite(attr_id, H5T_NATIVE_INT, &number_channels);
         printf("Attribute number_channels write status: %d\n", status);
+        status = H5Awrite(tot_packets_attr_id, H5T_NATIVE_INT, &tot_frames);
+        printf("Attribute number_packets write status: %d\n", status);
+
         status = H5Awrite(date_attr_id, atype, currentTime);
         printf("Attribute date write status: %d\n", status);
+
 
         tic = clock();
         x=0;
@@ -370,7 +344,9 @@ int main(int argc, char **argv) {
         printf("Writing & closing file...");
         err = H5Sclose(dataspace_id);
         err = H5Aclose(attr_id);
+        err = H5Aclose(tot_packets_attr_id);
         err = H5Aclose(date_attr_id);
+
         err = H5PTclose(ptable);
         H5Fclose(fid);
         printf("Done.\n");
