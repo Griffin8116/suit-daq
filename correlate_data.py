@@ -59,15 +59,20 @@ def now_str():
     '''
     return datetime.now().strftime("%H:%M:%S.%f")
 
+def return_slice(dataset_handler, index):
+    '''
+    Read a slice from an h5py file handler.
+    '''
+    return dataset_handler[index]
 
 def main():
-    #if len(sys.argv) != 2:
-    #    print "Error; need input file name."
-    #    return
+    if len(sys.argv) != 2:
+        print "Error; need input file name."
+        return
 
     #start_time = time.time()
-    #filename = sys.argv[1] 
-    data_file = "/home/sean/work/cosmology/suit/DAQ/suit-daq/testing/test_code/test_data/processed/pr_test_stream.h5"
+    data_file = sys.argv[1] 
+    #data_file = "/home/sean/work/cosmology/suit/DAQ/suit-daq/testing/test_code/test_data/processed/pr_test_stream.h5"
 
     in_data = h5py.File(data_file, "r")
     print "{0:s}\n\tFile size: {1:s}\n".format(in_data, h5v.format_size(os.path.getsize(data_file)))
@@ -96,50 +101,30 @@ def main():
     number_entries = in_data.attrs['true_number_entries']    
     number_correlations = number_channels * (number_channels + 1) / 2
 
-    
-    comp_type = np.dtype([('index', 'int64'), 
- #                         ('frame_number', 'uint32'),
- #                         ('packet_timestamps', '|S30', number_channels), 
-                          ('correlation_products', 'complex128', 
-                           (number_correlations, number_frequencies))
-                         ])
-    
-
-
-    #comp_type = np.dtype([('correlation_products', 'complex128', 
-    #                       (number_correlations, number_frequencies))])
+    comp_type = np.dtype((('complex128'), (number_correlations, number_frequencies)))
     dataset_handler = out_data.create_dataset("correlated_timestream", 
                                               (number_entries,), 
                                               dtype=comp_type, 
                                               maxshape=(number_entries,), 
                                               compression="gzip", compression_opts=9)
 
-
     gains = np.zeros((number_channels, number_frequencies), dtype=np.complex128) + 1. #placeholder
 
     print "Start  {0:s}".format(now_str())
 
+
     frame_timestream = in_data['frame_timestream']
 
     for i in xrange(number_entries):
-        sliced_data = frame_timestream[i]
+        sliced_data = return_slice(frame_timestream, i) #frame_timestream[i]
         datum = convert_frame_multiple_channels(sliced_data['frame_data'])*gains
-        correlations = correlate(datum)
 
-        dataset_handler[i] = (sliced_data['index'], 
-        #                      sliced_data['frame_number'], 
-        #                      sliced_data['packet_timestamps'],
-                              return_triangle_array(correlations))
-        #print dataset_handler[i].dtype
-        #print return_triangle_array(correlations).dtype
-        #print return_triangle_array(correlations).shape
-        #print np.array(return_triangle_array(correlations), dtype=comp_type).dtype
-        #dataset_handler[i] = np.array(return_triangle_array(correlations), dtype=comp_type)
+        dataset_handler[i] = return_triangle_array(correlate(datum))
 
-        if i > 0 and i%100 == 0:
+        if i > 0 and i%1000 == 0:
             print "At {0:d}/{1:d}".format(i, number_entries)
 
-    print "Finish {0:s}".format(now_str())
+    print "Finished {0:s}".format(now_str())
 
 if __name__ == "__main__":
     main()
