@@ -6,11 +6,11 @@ from datetime import datetime
 #sys.path.append('~/work/cosmology/code/h5view/')
 
 import numpy as np
-#import matplotlib.pyplot as pl
 
 import h5view as h5v
 import h5py
 
+from correlator import *
 
   
     
@@ -67,6 +67,9 @@ class Frame(object):
         return int(sum(self.trace_received)) == self.num_channels
 
     def number_packets(self):
+    	'''
+		Return the number of packets in a frame.
+    	'''
         return int(sum(self.trace_received))
 
     def add_packet(self, packet):
@@ -106,13 +109,7 @@ def write_frame(dataset_handler, datum, write_index):
     '''
     Write a completed frame to disk.
     '''
-    
-    #current_length = (dataset_handler.shape)[0]
-    #print "Write index: {0:d} datum frame index: {1:d}".format(write_index, datum['index'][0])
-    #if write_index >= current_length:
-        #print ">>>>> Expanding output dataset size.\n"
-    #    dataset_handler.resize((current_length + 1000,))
-        
+
     dataset_handler[write_index] = datum
 
 
@@ -253,8 +250,8 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
     return completed_frame_total
 
 def main():
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print "Usage: {0:s} <filename> [number packets to analyse]"
+    if len(sys.argv) < 2 or len(sys.argv) > 4:
+        print "Usage: {0:s} <filename> [number packets to analyse] [number of integrations] ".format(sys.argv[0])
         return
 
     start_time = time.time()
@@ -263,22 +260,16 @@ def main():
     
     number_to_analyse = None
 
-    if len(sys.argv) == 3:
+    if len(sys.argv) >= 3:
         number_to_analyse = int(sys.argv[2])
-
- 
-    #file_view = h5v.open(filename)
-    #print "Let's display the file."
-    #print file_view
-    #file_view.close()
+	if len(sys.argv) == 4:
+        n_accumulations = int(sys.argv[3])
 
     try:
         in_data = h5py.File(filename, "r")
     except IOError:
         print "In data file already open... Closing."
-        in_data.close()
-
-        
+        in_data.close()       
     print "{0:s}\tFile size: {1:s}".format(in_data, h5v.format_size(os.path.getsize(filename)))
 
     print "Atributes: " 
@@ -290,11 +281,8 @@ def main():
     datestr = in_data.attrs['Date']
     file_date = datestr[0:10]
     file_time = datestr[11::]
-    print 
-    print
-    print "Date taken: {0:s}".format(file_date)
-    print "Time taken: {0:s}".format(file_time)
-    print "\n"
+
+    print "Date taken: {0:s}".format(datestr)
    
     total_packets = in_data.attrs['Number_packets']
     print "Total packets in file: {0:d}".format(total_packets)

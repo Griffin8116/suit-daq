@@ -12,52 +12,20 @@ import numpy as np
 import h5view as h5v
 import h5py
 
-
-def correlate(fourier):
-    '''
-    Correlate values 
-    
-    params:
-        fourier: list of FFTs (one for each channel)
-        
-    returns a 3D correlation triangle with NaNs in the lower-triangle components.
-    '''    
-    
-    f_shape = fourier.shape 
-    #returns something that looks like (N, N_frequency_channels)
-    #N = f_shape[0] #This is the number of channels that we are cross-correlating.
-    #N_frequency_channels = f_shape[1] #this is the number of frequency bins
-    
-    #Create correlation triangle with the right shape. Thus, it is a triangle with indices 
-    # i,j (i, j <= N) and k == N_frequency_channels
-    
-    corr_triangle = np.empty((f_shape[0], f_shape[0], f_shape[1]), dtype=np.complex128)
-    
-    for i, fft in enumerate(fourier):
-        for j, fft2 in enumerate(fourier):                        
-            corr_triangle[j,i] = np.complex128(fft*np.conjugate(fft2)) if i >= j else np.complex128() * np.nan
-    return corr_triangle
-
-        
-def return_triangle_array(corr_triangle):
-    '''
-    Return array corresponding to upper triangle.
-    '''
-    return corr_triangle[np.triu_indices(corr_triangle.shape[0])]
-
-
-def convert_frame_multiple_channels(data):
-    '''
-    Convert IceBoard frame data into complex scaler values.
-    '''
-
-    return data[:, ::2] + 1.0*1j*data[:, 1::2]
+from correlator import *
 
 def now_str():
     '''
     Return a string containing the current time.
     '''
     return datetime.now().strftime("%H:%M:%S.%f")
+
+def write_slice(dataset_handler, datum, write_index):
+    '''
+    Write a completed accumulation to disk.
+    '''
+
+    dataset_handler[write_index] = datum    
 
 def return_slice(dataset_handler, index):
     '''
@@ -66,22 +34,35 @@ def return_slice(dataset_handler, index):
     return dataset_handler[index]
 
 def main():
-    if len(sys.argv) != 2:
-        print "Error; need input file name."
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print "Usage: {0:s} <filename> [number integrations == 100]"
         return
 
+    
+
+    data_file = sys.argv[1] #"/home/sean/work/cosmology/ice/ch_acq/chrx/v1/dataOut/messy.0000"
+    
+    n_acc = 100
+
+    if len(sys.argv) == 3:
+        n_acc = int(sys.argv[2])
+
+
+
     #start_time = time.time()
-    data_file = sys.argv[1] 
-    #data_file = "/home/sean/work/cosmology/suit/DAQ/suit-daq/testing/test_code/test_data/processed/pr_test_stream.h5"
+    
 
     in_data = h5py.File(data_file, "r")
     print "{0:s}\n\tFile size: {1:s}\n".format(in_data, h5v.format_size(os.path.getsize(data_file)))
+
+
+
 
     print "Atributes: " 
     for k in in_data.attrs.keys():
         print "\t{0:s} : {1:s}".format(k, str(in_data.attrs[k]))
 
-
+    
     path_split = os.path.split(data_file)  
     correlated_filename = path_split[0] + "/cr_" + path_split[1][3::]
 
@@ -96,35 +77,82 @@ def main():
     for k in in_data.attrs.keys():
         out_data.attrs[k] = in_data.attrs[k] 
 
+
+
     number_frequencies = 1024
     number_channels = in_data.attrs['Number_channels']    
     number_entries = in_data.attrs['true_number_entries']    
     number_correlations = number_channels * (number_channels + 1) / 2
+ 
 
-    comp_type = np.dtype((('complex128'), (number_correlations, number_frequencies)))
-    dataset_handler = out_data.create_dataset("correlated_timestream", 
+    comp_type = np.dtype([('index', 'int64'), 
+                          ('timestamp', '|S30'), 
+                          ('products', 'complex64', (number_correlations, number_frequencies))
+                          ])
+    dataset_handler = out_data.create_dataset("correlations", 
                                               (number_entries,), 
                                               dtype=comp_type, 
                                               maxshape=(number_entries,), 
                                               compression="gzip", compression_opts=9)
 
-    gains = np.zeros((number_channels, number_frequencies), dtype=np.complex128) + 1. #placeholder
+    gains = np.ones((number_channels, number_frequencies), dtype=int)
+    
 
     print "Start  {0:s}".format(now_str())
 
-
     frame_timestream = in_data['frame_timestream']
 
+    accumulator = return_triangle_array(correlate(convert_frame_multiple_channels(return_slice(frame_timestream, 0)['frame_data'])))
+    
+    acc_index = 0
+    #n_acc = int(1000) 
+    out_data.attrs['accumulations_per_measurement'] = n_acc
+
+
+    accumulator = accumulator*0.
+    write_index = 0
+
     for i in xrange(number_entries):
-        sliced_data = return_slice(frame_timestream, i) #frame_timestream[i]
+        sliced_data = frame_timestream[i]
+
+        if acc_index == 0:
+            frame_index = sliced_data['index']
+            timestamp = sliced_data['packet_timestamps'][0]
+            #print frame_index, timestamp
+
         datum = convert_frame_multiple_channels(sliced_data['frame_data'])*gains
 
-        dataset_handler[i] = return_triangle_array(correlate(datum))
+        accumulator += return_triangle_array(correlate(datum))
+
+        if acc_index == n_acc -1:
+
+            #print "Writing accumulation to disk."
+            dataset_handler[write_index] = (frame_index, timestamp, accumulator)
+
+            write_index += 1
+
+            acc_index = 0
+            accumulator = 0.*accumulator
+            
+        else:
+            acc_index += 1
 
         if i > 0 and i%1000 == 0:
-            print "At {0:d}/{1:d}".format(i, number_entries)
+            print "[{2:s}] At {0:d}/{1:d}".format(i, number_entries, now_str())
+            print "\tCurrent packet information: {0:5d}; {1:30s}".format(frame_index, timestamp)
 
-    print "Finished {0:s}".format(now_str())
+    dataset_handler.resize((write_index,))
+    out_data.attrs['true_number_entries'] = write_index
+    out_data.close()
+    print "\nFinished {0:s}".format(now_str())
+
+    print "\n\n"
+    print "-------"
+    data_file = h5v.File(correlated_filename)
+    print data_file
+
+
+    data_file.close()
 
 if __name__ == "__main__":
     main()
