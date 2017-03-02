@@ -70,8 +70,8 @@ class Frame(object):
 
     def number_packets(self):
         '''
-		Return the number of packets in a frame.
-    	'''
+        Return the number of packets in a frame.
+        '''
         return int(sum(self.trace_received))
 
     def add_packet(self, packet):
@@ -119,8 +119,10 @@ def accumulate_frame(handler, acc_dict, frame):
     acc_dict['accumulator'] += return_triangle_array(correlate(datum))
     acc_dict['filled'] += 1
 
-    if acc_dict['filled'] == act_dict['n_acc']:
-        write_to_disk(handler, acc_dict['accumulator'], acc_dict['write_index'])
+
+
+    if acc_dict['filled'] == acc_dict['n_acc']:
+        write_to_disk(handler, (acc_dict['index'], acc_dict['timestamp'], acc_dict['accumulator']), acc_dict['write_index'])
         acc_dict['write_index'] += 1
         acc_dict['accumulator'] *= 0
         acc_dict['filled'] = 0
@@ -135,16 +137,27 @@ def write_to_disk(dataset_handler, datum, write_index):
     dataset_handler[write_index] = datum
 
 
-def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=None):
+def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=None, n_acc = 1000):
     '''
     Parse hdf5 file from packets into frames and accumulate them. 
     '''
 
-    if to_parse is not None:
-        TOT_PACKETS = to_parse
+    if to_parse is not None and to_parse > 0:
+        total_packets = to_parse
     else:
-        TOT_PACKETS = data_in_handle.attrs['Number_packets']
+        total_packets = data_in_handle.attrs['Number_packets']
     
+    n_corr = number_channels * (number_channels + 1) / 2
+    
+    accumulator = {
+        'accumulator': np.zeros((n_corr, 1024), dtype=np.complex64), 
+        'filled': 0,
+        'write_index': 0,
+        'n_acc': n_acc,
+        'timestamp': "",
+        'index': -1
+    }
+
     mailbox = []
     frame_index = 0
     need_new = True
@@ -152,7 +165,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
     old_frames = []
     write_frames = []
    
-    completed_accumulations = 0
+    completed_frame_total = 0
     number_incomplete_frames = 0
     number_forgotten_packets = 0
 
@@ -160,7 +173,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
     start_time = current_time
     last_time = current_time
     
-    CLEANING_THRESH = 100
+    cleaning_thresh = 25
 
     for packet_index in xrange(TOT_PACKETS):
 
@@ -182,12 +195,12 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
             print "Number of mailboxes: {0:d}".format(len(mailbox))
 
 
-            if len(mailbox) > 0 and frame_index - mailbox[0].index > CLEANING_THRESH:
+            if len(mailbox) > 0 and frame_index - mailbox[0].index > cleaning_thresh:
                 print "Oldest mailbox has an index out of bounds: {0:d}:{1:d}."\
                 .format(packet_index, mailbox[0].index)
 
                 for mailbox_number, frame in enumerate(mailbox):
-                    if frame_index - frame.index > CLEANING_THRESH:
+                    if frame_index - frame.index > cleaning_thresh:
                         old_frames += [mailbox_number]
                         print "Incomplete frame:"
                         print frame
@@ -209,7 +222,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
                 
                 if frame.add_packet(packet): #Returns true if the packet is full, false otherwise.
                     write_frames += [mailbox_number]                        
-                    write_frame(data_out_handle, accumulator, frame, completed_accumulations)
+                    accumulate_frame(data_out_handle, accumulator, frame)
                     completed_frame_total += 1 
 
                     mailbox = [i for j, i in enumerate(mailbox) if j not in write_frames]
@@ -238,7 +251,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
             print "Complete frame:"
             print frame
             print "\n"
-            write_frame(data_out_handle, frame.array(), completed_frame_total)
+            #write_frame(data_out_handle, frame.array(), completed_frame_total)
             completed_frame_total += 1
         else:
             print "Incomplete frame:"
@@ -261,7 +274,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
                                          + number_forgotten_packets/number_channels)
 
     print "\n\n"
-    return completed_frame_total
+    return accumulator['write_index']
 
 
 if __name__ == "__main__":
@@ -282,22 +295,25 @@ if __name__ == "__main__":
     if len(sys.argv) == 4:
         N_ACC = int(sys.argv[3])
 
+    #Open up the input file. 
     try:
-        INPUT_DATA_HANDLE = h5py.File(INPUT_FILENAME, "r")
+        INPUT_FILE = h5py.File(INPUT_FILENAME, "r")
     except IOError:
         print "In data file already open... Closing."
-        INPUT_DATA_HANDLE.close()       
+        INPUT_FILE.close()       
 
-
-    print "{0:s}\tFile size: {1:s}".format(in_data, 
+    print "{0:s}\tFile size: {1:s}".format(INPUT_FILE, 
                                            h5v.format_size(os.path.getsize(INPUT_FILENAME)))
     print "Input file atributes: " 
-    for k in INPUT_DATA_HANDLE.attrs.keys():
-        print "\t{0:s} : {1:s}".format(k, str(INPUT_DATA_HANDLE.attrs[k]))
+    for k in INPUT_FILE.attrs.keys():
+        print "\t{0:s} : {1:s}".format(k, str(INPUT_FILE.attrs[k]))
 
-    N_CHANNELS  = INPUT_DATA_HANDLE.attrs['Number_channels']     
-    TOT_PACKETS = INPUT_DATA_HANDLE.attrs['Number_packets']
-    MAX_FRAMES  = int(TOT_PACKETS / 4) + 10 if int(TOT_PACKETS / 4) > 1000 else 1010
+    #Retrieve some constants
+    N_CHANNELS = INPUT_FILE.attrs['Number_channels']     
+    TOT_PACKETS = INPUT_FILE.attrs['Number_packets']
+    MAX_FRAMES = int(TOT_PACKETS / 4) + 10 if int(TOT_PACKETS / 4) > 1000 else 1010
+    #Compute number unique correlations
+    NUMBER_CORRELATIONS = N_CHANNELS * (N_CHANNELS + 1) / 2
 
     print "Total packets in file: {0:d}".format(TOT_PACKETS)
     print "Maximum number frames: {0:d}".format(MAX_FRAMES)
@@ -307,7 +323,9 @@ if __name__ == "__main__":
 
     print "Number of frames per accumulation: {0:d}".format(N_ACC)
 
-    SOURCE_FILENAME = os.path.split(filename)
+
+    #Set up and open output file
+    SOURCE_FILENAME = os.path.split(INPUT_FILENAME)
     OUTPUT_FILENAME = SOURCE_FILENAME[0] + "/correlated/PC_" + SOURCE_FILENAME[1]
     
     if not os.path.exists(os.path.dirname(OUTPUT_FILENAME)):
@@ -321,32 +339,30 @@ if __name__ == "__main__":
     OUTPUT_FILE.attrs['process_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
     OUTPUT_FILE.attrs['number_accumulations'] = N_ACC
     
-    #assign attributes to new data file
-    for k in in_data.attrs.keys():
-        OUTPUT_FILE.attrs[k] = in_data.attrs[k] 
+    #Assign attributes to new data file
+    for k in INPUT_FILE.attrs.keys():
+        OUTPUT_FILE.attrs[k] = INPUT_FILE.attrs[k] 
 
     OUTPUT_FILE.attrs['Truncated_analysis'] = bool(N_TO_ANALYSE is not None)        
-
-    NUMBER_CORRELATIONS = number_channels * (number_channels + 1) / 2
 
     COMP_TYPE = np.dtype([('index', 'int64'), 
                           ('timestamp', '|S30'), 
                           ('products', 'complex64', (NUMBER_CORRELATIONS, 1024))
                          ])
 
-    OUTPUT_HANDLER = out_data.create_dataset("correlations", 
-                                             (max_num_frames,), 
-                                             dtype=COMP_TYPE, 
-                                             maxshape=(max_num_frames,), 
-                                             compression="gzip", compression_opts=9)
+    OUTPUT_HANDLER = OUTPUT_FILE.create_dataset("correlations", 
+                                                (MAX_FRAMES,), 
+                                                dtype=COMP_TYPE, 
+                                                maxshape=(MAX_FRAMES,), 
+                                                compression="gzip", compression_opts=9)
 
 
-    CORRELATION_TOTAL = parse_and_write_data(in_data, OUTPUT_HANDLER, 
-                                             number_channels, number_to_analyse)
+    CORRELATION_TOTAL = parse_raw_data(INPUT_FILE, OUTPUT_HANDLER, 
+                                       N_CHANNELS, N_TO_ANALYSE, N_ACC)
 
 
     OUTPUT_HANDLER.attrs['number_correlations'] = CORRELATION_TOTAL
-    dataset_handler.resize((CORRELATION_TOTAL,))
+    OUTPUT_HANDLER.resize((CORRELATION_TOTAL,))
 
     print "Number of accumulations in output file: {0:d}".format(CORRELATION_TOTAL)
 #    print "Printing first three entries: "
@@ -354,9 +370,9 @@ if __name__ == "__main__":
 #        print "Frame index: {0:6g}\tFrame timestamp: {1}".format(dataset_handler[i]['index'], 
 #            np.uint32(dataset_handler[i]['frame_number']))
 
-    in_data.close()    
-    out_data.close()
+    INPUT_FILE.close()    
+    OUTPUT_FILE.close()
     print "----------------------------------------"
 
     print time.time() - START_TIME
-    print final_entries
+    print CORRELATION_TOTAL
