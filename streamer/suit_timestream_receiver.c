@@ -114,18 +114,22 @@ int main(int argc, char **argv) {
     /*
      * check and use command line arguments
      */
-    if (argc < 5 || argc > 6) {
-        fprintf(stderr, "usage: %s <port> <outfile> <number frames> <number channels> [verbose = 1/0]\n", argv[0]);
+    if (argc < 6 || argc > 7) {
+        fprintf(stderr, "usage: %s <port> <outfile> <number files> <number frames> <number channels> [verbose = 1/0]\n", argv[0]);
         exit(1);
     }
     int verbose = 0;
     portno = atoi(argv[1]);
-    file_write_loops = 1;
-    int number_frames = atoi(argv[3]);
-    int number_channels = atoi(argv[4]);
-    if(argc == 6)
-        verbose = atoi(argv[4]);
+    file_write_loops = atoi(argv[3]);
+    int number_frames = atoi(argv[4]);
+    int number_channels = atoi(argv[5]);
+    if(argc == 7)
+        verbose = atoi(argv[6]);
 
+
+    printf("File write loops: %d\n", file_write_loops);
+    printf("Frames: %d\n", number_frames);
+    printf("Number channels: %d\n", number_channels);
     /*
      * socket: create the parent socket
      */
@@ -164,61 +168,54 @@ int main(int argc, char **argv) {
      * main loop: wait for a datagram, sort and write to disk
      */
     clientlen = sizeof(clientaddr);
-    //printf("buffer size %d\n", BUFSIZE);
-
-
-    
-
-
-    //Initialize HDF5 file and datatypes
-    dt_timestream      = H5Tarray_create2( H5T_NATIVE_CHAR, 1,  &dims );
-
-    hid_t strtype = H5Tcopy (H5T_C_S1);
-    status = H5Tset_size (strtype, H5T_VARIABLE);
-    
-    //Define a frame data type for H5
-    my_dt = H5Tcreate(H5T_COMPOUND, sizeof(singlePacket));
-
-    err = H5Tinsert(my_dt, "comp_timestamp", HOFFSET(singlePacket, comp_timestamp), strtype);
-    err = H5Tinsert(my_dt, "timestamp",      HOFFSET(singlePacket, timestamp),      H5T_NATIVE_UINT);
-    err = H5Tinsert(my_dt, "antenna",        HOFFSET(singlePacket, antenna),        H5T_NATIVE_UCHAR);
-    err = H5Tinsert(my_dt, "timestream",     HOFFSET(singlePacket, timestream),     dt_timestream);
-    
-
-    hsize_t d = 1;
-    hid_t attr_id, tot_packets_attr_id, date_attr_id; //attribute identifier
-              
-    //dataspace_id for attributes
-    hid_t dataspace_id = H5Screate(H5S_SCALAR);
-
-    //Set up string attribute stuff for date attribute
-    hid_t atype = H5Tcopy(H5T_C_S1);
-    H5Tset_size(atype, 84);
-    H5Tset_strpad(atype,H5T_STR_NULLTERM);
-
-
-    //struct timeval curTime;
-  
-    gettimeofday(&curTime, NULL);
-    //int micro = curTime.tv_usec;
-    micro = curTime.tv_usec;
-
-    char buffer [80];
-    strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
-
-    char currentTime[84] = "";
-    sprintf(currentTime, "%s.%06d", buffer, micro);
-    printf("current time: %s \n", currentTime);
-
-    int lastPrint_sec = curTime.tv_sec;
-    int print_timestamp = 0;
-    int timestamp_index = 0;
-    int new_timestamp_loop = 0;
-    int tot_frames = number_frames*number_channels;
+    printf("buffer size %d\n", BUFSIZE);
 
     printf("Beginning file write loop.\n");
     for (int loop_number = 0; loop_number < file_write_loops; ++loop_number)
     {
+        //Initialize HDF5 file and datatypes
+        dt_timestream      = H5Tarray_create2( H5T_NATIVE_CHAR, 1,  &dims );
+
+        hid_t strtype = H5Tcopy (H5T_C_S1);
+        status = H5Tset_size (strtype, H5T_VARIABLE);
+    
+        //Define a frame data type for H5
+        my_dt = H5Tcreate(H5T_COMPOUND, sizeof(singlePacket));
+
+        err = H5Tinsert(my_dt, "comp_timestamp", HOFFSET(singlePacket, comp_timestamp), strtype);
+        err = H5Tinsert(my_dt, "timestamp",      HOFFSET(singlePacket, timestamp),      H5T_NATIVE_UINT);
+        err = H5Tinsert(my_dt, "antenna",        HOFFSET(singlePacket, antenna),        H5T_NATIVE_UCHAR);
+        err = H5Tinsert(my_dt, "timestream",     HOFFSET(singlePacket, timestream),     dt_timestream);
+        
+
+        hsize_t d = 1;
+        hid_t attr_id, tot_packets_attr_id, date_attr_id; //attribute identifier
+                  
+        //dataspace_id for attributes
+        hid_t dataspace_id = H5Screate(H5S_SCALAR);
+
+        //Set up string attribute stuff for date attribute
+        hid_t atype = H5Tcopy(H5T_C_S1);
+        H5Tset_size(atype, 84);
+        H5Tset_strpad(atype,H5T_STR_NULLTERM);
+
+        //Set up date information.
+        gettimeofday(&curTime, NULL);
+        micro = curTime.tv_usec;
+
+        char buffer [80];
+        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
+
+        char currentTime[84] = "";
+        sprintf(currentTime, "%s.%06d", buffer, micro);
+        printf("current time: %s \n", currentTime);
+
+        int lastPrint_sec = curTime.tv_sec;
+        int print_timestamp = 0;
+        int timestamp_index = 0;
+        int new_timestamp_loop = 0;
+        int tot_frames = number_frames*number_channels;
+
 
         sprintf(outfname, "dataOut/d%s/%s.%04d", dateBuffer, argv[2], loop_number);
         printf("%s\n", outfname);
@@ -238,7 +235,27 @@ int main(int argc, char **argv) {
         status = H5Awrite(date_attr_id, atype, currentTime);
         printf("Attribute date write status: %d\n", status);
 
+        /*
+        singleTime.comp_timestamp = "-1";       
+        //assing data to singleTime
+        singleTime.timestamp = 0;
+        singleTime.antenna = 0;
+        for (int i = 0; i < nsamples; ++i) {
+            singleTime.timestream[i] = -125;
+        }
 
+        err = H5PTappend(ptable, (hsize_t)1, &(singleTime) );*/
+        
+        //sleep(1);
+        //Clear some packets from the buffer.
+        //for(int p = 0; p < 1000; p++){
+        //    memset(buf, 0, BUFSIZE);
+        //    n = recvfrom(sockfd, buf, BUFSIZE, 0,
+        //                 (struct sockaddr *) &clientaddr, &clientlen);
+        //}
+
+        printf("\nGo!\n");
+        gettimeofday(&curTime, NULL);
         tic = clock();
         x=0;
         
@@ -303,42 +320,43 @@ int main(int argc, char **argv) {
 
                 x+=1;
 
-
-            }
-
-            if(verbose)
-              printf("%hhX, %hX, %hX, %X \n", ant_channel, stream_id, word_length, timestamp);
-              //printf("%d %d\n", lastPrint_sec, curTime.tv_sec);
-            
-            
-            if(curTime.tv_sec - lastPrint_sec>= 1){
-                printf("Time to print a new timestamp frame; frame number %d/%d; file number %d/%d .\n", x, tot_frames, loop_number, file_write_loops);
-                printf("%s\n", currentTime);
-                print_timestamp = 1;
-                timestamp_index = 0;
-                lastPrint_sec = curTime.tv_sec;
-                printf("+++++++++++++++\n");
-            }
-
-            
-            if(print_timestamp){
-                if(1){
-                    new_timestamp_loop = 1;
+                if(verbose)
+                      printf("%hhX, %hX, %hX, %X \n", ant_channel, stream_id, word_length, timestamp);
+                      //printf("%d %d\n", lastPrint_sec, curTime.tv_sec);
                     
-                }
-                if(new_timestamp_loop){ //i.e. we've received channel 0's data
                     
-                    printf("%3d, %X, %X, %X \n", timestamp_index, ant_channel, word_length, timestamp);
-                    timestamp_index++;
-                    //printf("-------------------\n");
-                }
-                if(timestamp_index == 32){
-                    print_timestamp = 0;
-                    new_timestamp_loop = 0;
+                if(curTime.tv_sec - lastPrint_sec>= 2){
+                    printf("At: frame number %d/%d; file number %d/%d .\n", x, tot_frames, loop_number+1, file_write_loops);
+                    printf("%s\n", currentTime);
+                    print_timestamp = 1;
+                    timestamp_index = 0;
+                    lastPrint_sec = curTime.tv_sec;
                     printf("+++++++++++++++\n");
                 }
 
-            }   
+                
+                if(print_timestamp){
+                    if(1){
+                        new_timestamp_loop = 1;
+                        
+                    }
+                    if(new_timestamp_loop){ //i.e. we've received channel 0's data
+                        
+                        printf("%3d, %X, %X, %X \n", timestamp_index, ant_channel, word_length, timestamp);
+                        timestamp_index++;
+                        //printf("-------------------\n");
+                    }
+                    if(timestamp_index == 16){
+                        print_timestamp = 0;
+                        new_timestamp_loop = 0;
+                        printf("+++++++++++++++\n");
+                    }
+
+                }   
+
+            }
+
+    
 
         }
         printf("Writing & closing file...");
