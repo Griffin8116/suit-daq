@@ -2,3 +2,5 @@ notebooks
 dataOut
 streamer/dataOut
 streamer/suit_timestream_receiver
+*.pyc
+.ipynb_*

@@ -139,7 +139,7 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
     last_time = current_time
     #data = data_in_handle['ADC_Timestream_Data']
 
-    cleaning_threshold = 100
+    cleaning_threshold = 1000
 
     #for packet_index, packet in enumerate(data_in_handle):
     if to_parse is not None:
@@ -160,7 +160,7 @@ def parse_and_write_data(data_in_handle, data_out_handle, number_channels, to_pa
             run_time = (time.time() - start_time) / 60.
             print "Run time: {0:.3f} minutes.".format(run_time)
             print "Estimated time remaining: {0:.2f} minutes.".format(total_packets / (packet_index / run_time) - run_time)
-            print "Frames analysed: {0:6g}/{1:6g}".format(packet_index, total_packets)
+            print "Packets analysed: {0:6g}/{1:6g}".format(packet_index, total_packets)
             print "Completed frames to date: {0:6g}".format(completed_frame_total)
             print "Packet-to-frame ratio: {0:.4f}".format(float(packet_index)/completed_frame_total)
             print "Number of incomplete frames: {0:d}".format(number_incomplete_frames)
