@@ -1,10 +1,12 @@
+# pylint: disable=C0103, W1202, line-too-long
+
 import os
 import time
 import sys
 from datetime import datetime
 #import multiprocessing
-
-
+import getopt
+import logging
 
 import numpy as np
 import correlator
@@ -14,7 +16,8 @@ import h5py
 sys.path.append('~/work/code/h5view/')
 import h5view as h5v
   
-import logging
+
+
     
 class Error(Exception):
     """Base class for exceptions in this module."""
@@ -34,7 +37,8 @@ class Frame(object):
         self.trace_received = np.zeros(num_channels) #flags for which packets are in frame
         self.frame_number = 0 #Frame number from FPGA (i.e. frame timestamp 32 bit number)
         #the timestamps for each packet
-        self.packet_timestamps = ['' for string in xrange(num_channels)] 
+        self.packet_timestamps = np.empty(num_channels, dtype=str)
+        #['' for string in xrange(num_channels)] 
         self.index = 0 #frame indexing number
 
         self.comp_type = np.dtype([('index', 'int64'), 
@@ -201,33 +205,33 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
         #if current_time - last_time > 6:
         if len(mailbox) > 100 or (packet_index % DISPLAY_THRESH == 0 and packet_index != 0):    
             last_time = current_time
-            print "-+-+-+-+-+-+-+-+-+-+-+-+-+-"
+            logger.info("-+-+-+-+-+-+-+-+-+-+-+-+-+-")
             run_time = (time.time() - start_time) / 60.
-            print "Run time: {0:.3f} minutes.".format(run_time)
-            print "Estimated time remaining: {0:.2f} minutes."\
-            .format(total_packets / (packet_index / run_time) - run_time)
-            print "Packets analysed: {0:6g}/{1:6g}".format(packet_index, total_packets)
-            print "Completed frames to date: {0:6g}".format(completed_frame_total)
-            print "Completed accumulations to date: {0:6g}".format(accumulator['write_index']+1)
-            print "Packet-to-frame ratio: {0:.4f}".format(float(packet_index)/completed_frame_total)
-            print "Number of incomplete frames: {0:d}".format(number_incomplete_frames)
-            print "Number of forgotten packets: {0:d}".format(number_forgotten_packets)
-            print "Number of mailboxes: {0:d}".format(len(mailbox))
+            logger.info("Run time: {0:.3f} minutes.".format(run_time))
+            logger.info("Estimated time remaining: {0:.2f} minutes."\
+            .format(total_packets / (packet_index / run_time) - run_time))
+            logger.info("Packets analysed: {0:6g}/{1:6g}".format(packet_index, total_packets))
+            logger.debug("Completed frames to date: {0:6g}".format(completed_frame_total))
+            logger.info("Completed accumulations to date: {0:6g}".format(accumulator['write_index']+1))
+            logger.debug("Packet-to-frame ratio: {0:.4f}".format(float(packet_index)/completed_frame_total))
+            logger.debug("Number of incomplete frames: {0:d}".format(number_incomplete_frames))
+            logger.debug("Number of forgotten packets: {0:d}".format(number_forgotten_packets))
+            logger.info("Number of mailboxes: {0:d}".format(len(mailbox)))
 
 
-            if (len(mailbox) > 0 and frame_index - mailbox[0].index > cleaning_thresh):
-                print "Oldest mailbox has an index out of bounds: {0:d}:{1:d}."\
-                .format(packet_index, mailbox[0].index)
+            if len(mailbox) > 0 and frame_index - mailbox[0].index > cleaning_thresh:
+                logger.info("Oldest mailbox has an index out of bounds: {0:d}:{1:d}."\
+                .format(packet_index, mailbox[0].index))
 
                 for mailbox_number, frame in enumerate(mailbox):
                     if frame_index - frame.index > cleaning_thresh:
                         old_frames += [mailbox_number]
-                        print "Incomplete frame:"
-                        print frame
-                        print "\n"
+                        logger.debug("Incomplete frame:")
+                        logger.debug("\n\n" + str(frame) + "\n")
+                        
                         number_forgotten_packets += frame.number_packets()
                 
-                print old_frames
+                logger.debug("Removed mailboxes: " + str(old_frames))
                 
                 if len(old_frames) > 0:
                     number_incomplete_frames += len(old_frames)
@@ -235,7 +239,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
                     old_frames = []
                         
 
-                print "Updated number of mailboxes: {0:d}\n".format(len(mailbox))
+                logger.info("Updated number of mailboxes: {0:d}".format(len(mailbox)))
 
         for mailbox_number, frame in enumerate(mailbox):
             if frame.frame_number == packet['timestamp']:
@@ -262,9 +266,9 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
             need_new = True
 
                 
-    print "++++++++++++++++++++++++++++++++++++++++"        
-    print "At end of datafile; final results:\n"
-    print "Mailbox size: {0:d}\n".format(len(mailbox))
+    logger.info("++++++++++++++++++++++++++++++++++++++++")
+    logger.info("At end of datafile; final results:")
+    logger.info("Mailbox size: {0:d}\n".format(len(mailbox)))
     for mailbox_number, frame in enumerate(mailbox):
         if frame.is_full():
             #This should never happen.
@@ -273,65 +277,124 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
             print "\n"
             completed_frame_total += 1
         else:
-            print "Incomplete frame:"
-            print frame
-            print "\n"
+            logger.info("Incomplete frame:")
+            logger.info("\n" + str(frame) + "\n")
             number_incomplete_frames += 1
             number_forgotten_packets += frame.number_packets()
 
-    print "++++++++++++++++++++++++++++++++++++++++"
-    print "Final completed frames: {0:d}".format(completed_frame_total)
+    logger.info("++++++++++++++++++++++++++++++++++++++++")
+    logger.info("Final completed frames: {0:d}".format(completed_frame_total))
     if completed_frame_total != 0:
-        print "Packet-to-frame ratio: {0:.4f}".format(float(total_packets)/completed_frame_total)
+        logger.info("Packet-to-frame ratio: {0:.4f}".format(float(total_packets)/completed_frame_total))
     else:
-        print "No completed frames!"
-    print "Number of incomplete frames: {0:d}".format(number_incomplete_frames)
-    print "Number of forgotten packets: {0:d}".format(number_forgotten_packets)
-    print "          Equivalent frames: {0:d}".format(int(np.ceil(number_forgotten_packets/float(number_channels))))
+        logger.info("No completed frames!")
+    logger.info("Number of incomplete frames: {0:d}".format(number_incomplete_frames))
+    logger.info("Number of forgotten packets: {0:d}".format(number_forgotten_packets))
+    logger.info("          Equivalent frames: {0:d}".format(int(np.ceil(number_forgotten_packets/float(number_channels)))))
 
-    print "Ideal frame total: {0:d}".format(completed_frame_total\
-                                         + int(np.ceil(number_forgotten_packets/float(number_channels))))
+    logger.info("Ideal frame total: {0:d}".format(completed_frame_total\
+                                         + int(np.ceil(number_forgotten_packets/float(number_channels)))))
 
-    print "\n\n"
+    logger.info("\n")
     return accumulator['write_index']
+
+def usage():
+
+    print "Usage: {0:s} <filename>\n\
+         \t -h/--help: This message.\n\
+         \t -f/--file: Input file name.\n\
+         \t -p/--packets: Number of packets to analyse.\n\
+         \t -n/--nacc: Number of frames to accumulate.\n\
+         \t -l/--log: Log level".format(sys.argv[0])
 
 
 if __name__ == "__main__":
 
-    numeric_level = getattr(logging, loglevel.upper(), None)
+
+    INPUT_FILENAME = "EMPTY"
+    N_TO_ANALYSE = None
+    N_ACC = 100
+    LOG_LEVEL = "INFO"
+
+    if len(sys.argv) == 1:
+        usage()
+        sys.exit(2)
+
+    try:
+    #print sys.argv
+        OPTS, ARGS = getopt.getopt(sys.argv[1:],
+                                   "hi:p:n:l:",
+                                   ["help",
+                                    "infile=", 
+                                    "packets=", 
+                                    "nacc=", 
+                                    "log=", 
+                                   ])
+    #print opts
+    #print args
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+
+    for opt, arg in OPTS:
+        if opt in ("-h", "--help"):
+            usage()          
+            sys.exit(2)
+        if opt in ("-i", "--infile"):
+            INPUT_FILENAME = arg
+        elif opt in ("-p", "--packets"):
+            N_TO_ANALYSE = int(arg)
+        elif opt in ("-l", "--log"):
+            LOG_LEVEL = arg
+        elif opt in ("-n", "--nacc"):
+            N_ACC = int(arg)
+
+
+    # create logger
+    logger = logging.getLogger(__name__) # pylint: disable=locally-disabled, invalid-name
+
+    numeric_level = getattr(logging, LOG_LEVEL.upper(), None)
     if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: %s' % loglevel)
-    logging.basicConfig(level=numeric_level, ...)
+        raise ValueError('Invalid log level: %s' % LOG_LEVEL)
+
+    logger.setLevel(numeric_level)
+    # create console handler and set level to debug
+    ch = logging.StreamHandler()
+    ch.setLevel(numeric_level)
+    # create formatter
+    
+    #formatter = logging.Formatter("%(asctime)s - %(funcName)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter("%(funcName)s - %(levelname)s - %(message)s")
+    # add formatter to ch
+    ch.setFormatter(formatter)
+    # add ch to logger
+    logger.addHandler(ch)            
 
 
-    if len(sys.argv) < 2 or len(sys.argv) > 4:
-        print "Usage: {0:s} <filename>\
-         [number packets to analyse]\
-         [number of integrations] ".format(sys.argv[0])
-        exit()
 
     START_TIME = time.time()
-    INPUT_FILENAME = sys.argv[1] #"/home/sean/work/cosmology/ice/ch_acq/chrx/v1/dataOut/messy.0000"   
-    N_TO_ANALYSE = None
-    N_ACC = 1000
+ #   INPUT_FILENAME = sys.argv[1]
+ #   N_TO_ANALYSE = None
+ #   N_ACC = 1000
 
-    if len(sys.argv) >= 3:
-        N_TO_ANALYSE = int(sys.argv[2])
-    if len(sys.argv) == 4:
-        N_ACC = int(sys.argv[3])
+#    if len(sys.argv) >= 3:
+#        N_TO_ANALYSE = int(sys.argv[2])
+#    if len(sys.argv) == 4:
+#        N_ACC = int(sys.argv[3])
 
     #Open up the input file. 
     try:
         INPUT_FILE = h5py.File(INPUT_FILENAME, "r")
     except IOError:
-        print "In data file already open... Closing."
-        INPUT_FILE.close()       
+        logger.critical("Error opening input file; exiting.")
+        #INPUT_FILE.close()       
+        sys.exit()
 
-    print "{0:s}\tFile size: {1:s}".format(INPUT_FILE, 
-                                           h5v.format_size(os.path.getsize(INPUT_FILENAME)))
-    print "Input file atributes: " 
+    logger.info("{0:s}\tFile size: {1:s}".format(INPUT_FILE, 
+                                           h5v.format_size(os.path.getsize(INPUT_FILENAME))))
+    logger.info("Input file atributes: ")
     for k in INPUT_FILE.attrs.keys():
-        print "\t{0:s} : {1:s}".format(k, str(INPUT_FILE.attrs[k]))
+        logger.info("\t{0:s} : {1:s}".format(k, str(INPUT_FILE.attrs[k])))
 
     #Retrieve some constants
     N_CHANNELS = INPUT_FILE.attrs['Number_channels']     
@@ -340,14 +403,14 @@ if __name__ == "__main__":
     #Compute number unique correlations
     NUMBER_CORRELATIONS = N_CHANNELS * (N_CHANNELS + 1) / 2
 
-    print "Total packets in file: {0:d}".format(TOT_PACKETS)
-    print "Maximum number frames: {0:d}".format(MAX_FRAMES)
+    logger.info("Total packets in file: {0:d}".format(TOT_PACKETS))
+    logger.info("Maximum number frames: {0:d}".format(MAX_FRAMES))
 
     if N_TO_ANALYSE is not None:
-        print "Number of frames to analyse: {0:d}".format(N_TO_ANALYSE)
+        logger.info("Number of frames to analyse: {0:d}".format(N_TO_ANALYSE))
 
-    print "Number of frames per accumulation: {0:d}".format(N_ACC)
-
+    logger.info("Number of frames per accumulation: {0:d}".format(N_ACC))
+    logger.info("Logging level: {0:s}".format(LOG_LEVEL))
 
     #Set up and open output file
     SOURCE_FILENAME = os.path.split(INPUT_FILENAME)
@@ -363,7 +426,7 @@ if __name__ == "__main__":
 
     if os.path.isfile(OUTPUT_FILENAME):
         os.remove(OUTPUT_FILENAME)
-        print "Deleted '{0:s}'".format(OUTPUT_FILENAME)
+        logger.info("Deleted '{0:s}'".format(OUTPUT_FILENAME))
 
     OUTPUT_FILE = h5py.File(OUTPUT_FILENAME, 'w')    
         
@@ -399,15 +462,14 @@ if __name__ == "__main__":
     OUTPUT_FILE.attrs['true_number_entries'] = CORRELATION_TOTAL
     OUTPUT_HANDLER.resize((CORRELATION_TOTAL,))
 
-    print "Number of accumulations in output file: {0:d}".format(CORRELATION_TOTAL)
+    logger.info("Number of accumulations in output file: {0:d}".format(CORRELATION_TOTAL))
 #    print "Printing first three entries: "
 #    for i in xrange(3):
 #        print "Frame index: {0:6g}\tFrame timestamp: {1}".format(dataset_handler[i]['index'], 
 #            np.uint32(dataset_handler[i]['frame_number']))
-    print OUTPUT_FILE
+    #print OUTPUT_FILE
     INPUT_FILE.close()    
     OUTPUT_FILE.close()
-    print "----------------------------------------"
-
-    print time.time() - START_TIME
-    print CORRELATION_TOTAL
+    logger.info("----------------------------------------")
+    logger.info("Run time: {0:.3f}".format(time.time() - START_TIME))
+    logger.info("Number accumulations: {0:d}".format(CORRELATION_TOTAL))
