@@ -42,7 +42,7 @@ class Frame(object):
         '''
 
         printstr = "Frame index: {0:d}\n".format(self.index)
-        printstr += "Frame number: {0:X}\n".format(self.frame_number)        
+        printstr += "Frame number: {0:X}\n".format(np.uint32(self.frame_number))
         printstr += "\tTotal number traces: {0:d}\n".format(self.num_channels)
         printstr += "\tTotal filled traces: {0:d}\n".format(int(np.sum(self.trace_received)))
         trace_key = ""
