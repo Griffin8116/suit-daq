@@ -12,13 +12,14 @@ def correlate(fourier):
     '''    
     
     f_shape = fourier.shape 
-    #returns something that looks like (N, N_frequency_channels)
+    #returns something that looks like (N_channels, N_frequency_channels)
     #N = f_shape[0] #This is the number of channels that we are cross-correlating.
     #N_frequency_channels = f_shape[1] #this is the number of frequency bins
     
     #Create correlation triangle with the right shape. Thus, it is a triangle with indices 
     # i,j (i and j <= N) and k == N_frequency_channels
     
+    #shape is a NxNxN_freq data cube
     corr_triangle = np.empty((f_shape[0], f_shape[0], f_shape[1]), dtype=np.complex64)
     
     for i, fft in enumerate(fourier):

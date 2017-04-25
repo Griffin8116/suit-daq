@@ -56,6 +56,9 @@ class Frame(object):
         self.index = index
     
     def __str__(self):
+        '''
+        Create the string representation of a Frame object.
+        '''
 
         printstr = "Frame index: {0:d}\n".format(self.index)
         printstr += "Frame number: {0:X}\n".format(self.frame_number)        
@@ -192,7 +195,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
 
     current_time = time.time()
     start_time = current_time
-    last_time = current_time
+#    last_time = current_time
     
     cleaning_thresh = 1000
     DISPLAY_THRESH = 20000
@@ -204,7 +207,7 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
 
         #if current_time - last_time > 6:
         if len(mailbox) > 100 or (packet_index % DISPLAY_THRESH == 0 and packet_index != 0):    
-            last_time = current_time
+            #last_time = current_time
             logger.info("-+-+-+-+-+-+-+-+-+-+-+-+-+-")
             run_time = (time.time() - start_time) / 60.
             logger.info("Run time: {0:.3f} minutes.".format(run_time))
@@ -299,6 +302,9 @@ def parse_raw_data(data_in_handle, data_out_handle, number_channels, to_parse=No
     return accumulator['write_index']
 
 def usage():
+    '''
+    Usage function.
+    '''
 
     print "Usage: {0:s} <filename>\n\
          \t -h/--help: This message.\n\
@@ -390,8 +396,8 @@ if __name__ == "__main__":
         #INPUT_FILE.close()       
         sys.exit()
 
-    logger.info("{0:s}\tFile size: {1:s}".format(INPUT_FILE, 
-                                           h5v.format_size(os.path.getsize(INPUT_FILENAME))))
+    logger.info("{0:s}\tFile size: {1:s}"\
+        .format(INPUT_FILE, h5v.format_size(os.path.getsize(INPUT_FILENAME))))
     logger.info("Input file atributes: ")
     for k in INPUT_FILE.attrs.keys():
         logger.info("\t{0:s} : {1:s}".format(k, str(INPUT_FILE.attrs[k])))
@@ -425,6 +431,7 @@ if __name__ == "__main__":
     #    OUTPUT_FILE.close()       
 
     if os.path.isfile(OUTPUT_FILENAME):
+        logger.info("Target file '{0:s}' exists; overwriting.".format(OUTPUT_FILENAME))
         os.remove(OUTPUT_FILENAME)
         logger.info("Deleted '{0:s}'".format(OUTPUT_FILENAME))
 
