@@ -20,6 +20,8 @@
 #include "hdf5.h"
 #include "hdf5_hl.h"
 
+#include <sys/stat.h>
+
 #define BUFSIZE 32767
 #define nsamples 2048
 
@@ -42,7 +44,7 @@ int main(int argc, char **argv) {
     
     int ntimes = 3600;
     
-    typedef struct visibility
+    typedef struct packet_struct
     {
         unsigned int   timestamp;
         int8_t    antenna;
@@ -150,12 +152,16 @@ int main(int argc, char **argv) {
     micro = curTime.tv_usec;
     
     char buffer [80];
+
     strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
     
     char currentTime[26] = "";
     sprintf(currentTime, "%s.%06d", buffer, micro);
     printf("Current time: %s \n", currentTime);
     
+    //create the output directory if it doesn't exist.
+    sprintf(buffer, "dataOut/d%s/", dateBuffer);
+    mkdir(buffer, ACCESSPERMS);
     
     sprintf(outfname, "dataOut/d%s/%s.config", dateBuffer, argv[2]);
     printf("Config file: %s\n", outfname);
@@ -202,11 +208,10 @@ int main(int argc, char **argv) {
             signal(SIGINT, sig_handler);
             
             //recvfrom: receive a UDP datagram or read from file
-            
             memset(buf, 0, BUFSIZE);
-            
             n = recvfrom(sockfd, buf, BUFSIZE, 0,
                         (struct sockaddr *) &clientaddr, &clientlen);
+            
             if (n < 0)
                 error("ERROR in recvfrom");
             
@@ -218,7 +223,7 @@ int main(int argc, char **argv) {
             if ( frame_id == timestream_frame_id_value ) { //Got a timestream frame
                 
                 if(verbose)
-                printf("Got a frame.\n");
+                    printf("Got a packet.\n");
                 
                 
                 //unpack the header
@@ -231,7 +236,6 @@ int main(int argc, char **argv) {
                 micro = curTime.tv_usec;
                 strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
                 sprintf(currentTime, "%s.%06d", buffer, micro);
-                //singleTime.comp_timestamp = currentTime;
                 sprintf(singleTime.comp_timestamp, currentTime);
                 
                 //assing data to singleTime
@@ -257,8 +261,9 @@ int main(int argc, char **argv) {
                     printf("current time: %s \n", currentTime);
                     printf("%hhX, %hX, %hX, %X \n", ant_channel, stream_id, word_length, timestamp);
                 }
+                
                 if(curTime.tv_sec - lastPrint_sec>= 2){
-                    printf("At: frame number %d/%d; file number %d/%d .\n", x, tot_packets, loop_number+1, file_write_loops);
+                    printf("At: packet number %d/%d; file number %d/%d .\n", x, tot_packets, loop_number+1, file_write_loops);
                     printf("%s\n", currentTime);
                     print_timestamp = 1;
                     timestamp_index = 0;

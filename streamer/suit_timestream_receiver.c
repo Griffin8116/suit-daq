@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
         int tot_frames = number_frames*number_channels;
 
 
-        sprintf(outfname, "dataOut/d%s/%s.%04d", dateBuffer, argv[2], loop_number);
+        sprintf(outfname, "dataOut/d%s/%s.%04d.h5", dateBuffer, argv[2], loop_number);
         printf("%s\n", outfname);
         fid=H5Fcreate(outfname,H5F_ACC_TRUNC,H5P_DEFAULT,H5P_DEFAULT);
 
